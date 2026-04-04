@@ -1,11 +1,11 @@
 ---
 name: ai-daily-digest
-description: "Fetches RSS feeds from 90 top Hacker News blogs (curated by Karpathy), uses AI to score and filter articles, and generates a daily digest in Markdown with Chinese-translated titles, category grouping, trend highlights, and visual statistics (Mermaid charts + tag cloud). Use when user mentions 'daily digest', 'RSS digest', 'blog digest', 'AI blogs', 'tech news summary', or asks to run /digest command. Trigger command: /digest."
+description: "Fetches RSS feeds from a curated list of top Hacker News blogs (curated by Karpathy), uses AI to score and filter articles, and generates a daily digest in Markdown with Chinese-translated titles, category grouping, trend highlights, and visual statistics (Mermaid charts + tag cloud). Use when user mentions 'daily digest', 'RSS digest', 'blog digest', 'AI blogs', 'tech news summary', or asks to run /digest command. Trigger command: /digest."
 ---
 
 # AI Daily Digest
 
-从 Karpathy 推荐的 90 个热门技术博客中抓取最新文章，通过 AI 评分筛选，生成每日精选摘要。
+从 Karpathy 推荐的热门技术博客中抓取最新文章，通过 AI 评分筛选，生成每日精选摘要。
 
 ## 命令
 
@@ -25,9 +25,13 @@ description: "Fetches RSS feeds from 90 top Hacker News blogs (curated by Karpat
 1. 确定此 SKILL.md 文件的目录路径为 `SKILL_DIR`
 2. 脚本路径 = `${SKILL_DIR}/scripts/<script-name>.ts`
 
-| 脚本 | 用途 |
+| 文件 | 用途 |
 |------|------|
 | `scripts/digest.ts` | 主脚本 - RSS 抓取、AI 评分、生成摘要 |
+| `config/feeds.json` | RSS 订阅源列表（可自由编辑添加/删除源） |
+| `prompts/scoring.md` | 文章评分规则 Prompt 模板 |
+| `prompts/summary.md` | 文章摘要生成 Prompt 模板 |
+| `prompts/highlights.md` | 今日看点生成 Prompt 模板 |
 
 ---
 
@@ -122,9 +126,19 @@ question({
 })
 ```
 
-### Step 1b: AI API Key（Gemini 优先，支持兜底）
+### Step 1b: AI 模型配置
 
-如果配置中没有已保存的 API Key，询问：
+根据运行环境选择合适的 AI 提供方：
+
+**选项 A — 使用当前 Claude Code 会话模型（推荐，无需额外 API Key）**
+
+在 Claude Code 环境中，可直接复用当前模型会话，无需配置额外 Key：
+
+```bash
+export AI_CLI_CMD="claude"
+```
+
+**选项 B — Gemini API Key（免费）**
 
 ```
 question({
@@ -136,15 +150,30 @@ question({
 })
 ```
 
-如果 `config.geminiApiKey` 已存在，跳过此步。
+**选项 C — Anthropic API Key（Claude 直接调用）**
+
+```bash
+export ANTHROPIC_API_KEY="your-anthropic-key"
+export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
+```
+
+如果 `config.geminiApiKey` 或 `AI_CLI_CMD` 已存在，跳过此步。
 
 ### Step 2: 执行脚本
 
 ```bash
 mkdir -p ./output
 
+# 选项 A：使用 Claude Code 会话（在 Claude Code 环境中推荐）
+export AI_CLI_CMD="claude"
+
+# 选项 B：使用 Gemini
 export GEMINI_API_KEY="<key>"
-# 可选：OpenAI 兼容兜底（DeepSeek/OpenAI 等）
+
+# 选项 C：使用 Anthropic
+export ANTHROPIC_API_KEY="<key>"
+
+# 选项 D：OpenAI 兼容兜底（DeepSeek/OpenAI 等）
 export OPENAI_API_KEY="<fallback-key>"
 export OPENAI_API_BASE="https://api.deepseek.com/v1"
 export OPENAI_MODEL="deepseek-chat"
@@ -206,35 +235,89 @@ EOF
 
 ---
 
+## AI 模型提供方
+
+脚本支持多种 AI 模型调用方式，通过环境变量配置：
+
+| 提供方 | 环境变量 | 说明 |
+|--------|----------|------|
+| Claude Code 会话 | `AI_CLI_CMD=claude` | 复用当前 Claude Code 会话，无需独立 API Key |
+| Gemini | `GEMINI_API_KEY` | 免费额度充足，推荐首选 |
+| Anthropic | `ANTHROPIC_API_KEY` | 直接调用 Claude API |
+| OpenAI 兼容 | `OPENAI_API_KEY` + `OPENAI_API_BASE` | DeepSeek、OpenAI 等 |
+
+**优先级**: `AI_CLI_CMD` > `GEMINI_API_KEY` > `ANTHROPIC_API_KEY` > `OPENAI_API_KEY`
+
+**在 Claude Code / Cursor / Copilot 等 AI 编码工具中使用时**，可将 `AI_CLI_CMD` 设置为对应工具的 CLI 命令，直接复用当前会话的模型能力，无需配置额外 API Key：
+
+```bash
+# Claude Code
+export AI_CLI_CMD="claude"
+
+# llm（Simon Willison 的通用 LLM CLI 工具）
+export AI_CLI_CMD="llm"
+```
+
+---
+
 ## 环境要求
 
 - `bun` 运行时（通过 `npx -y bun` 自动安装）
-- 至少一个 AI API Key（`GEMINI_API_KEY` 或 `OPENAI_API_KEY`）
-- 可选：`OPENAI_API_BASE`、`OPENAI_MODEL`（用于 OpenAI 兼容接口）
-- 网络访问（需要能访问 RSS 源和 AI API）
+- 至少一个 AI 模型配置（见上方"AI 模型提供方"表格）
+- 网络访问（需要能访问 RSS 源和 AI API，CLI 模式下仅需访问 RSS 源）
+
+---
+
+## 自定义 RSS 源
+
+RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
+
+```json
+[
+  { "name": "simonwillison.net", "xmlUrl": "https://simonwillison.net/atom/everything/", "htmlUrl": "https://simonwillison.net" }
+]
+```
+
+直接编辑该文件即可增删订阅源，无需修改脚本代码。
+
+---
+
+## 自定义评分规则
+
+评分标准、摘要格式、今日看点格式均以 Markdown 模板形式保存在 `prompts/` 目录：
+
+| 文件 | 用途 |
+|------|------|
+| `prompts/scoring.md` | 文章相关性/质量/时效性评分规则 |
+| `prompts/summary.md` | 摘要结构与格式要求 |
+| `prompts/highlights.md` | 今日看点总结格式 |
+
+直接编辑对应 `.md` 文件即可调整 AI 行为，无需修改脚本代码。占位符 `{{ARTICLES_LIST}}`、`{{LANG_INSTRUCTION}}`、`{{LANG_NOTE}}` 会在运行时自动替换。
 
 ---
 
 ## 信息源
 
-90 个 RSS 源来自 [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/)，由 [Andrej Karpathy 推荐](https://x.com/karpathy)。
+RSS 源来自 [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/)，由 [Andrej Karpathy 推荐](https://x.com/karpathy)。
 
-包括：simonwillison.net, paulgraham.com, overreacted.io, gwern.net, krebsonsecurity.com, antirez.com, daringfireball.net 等顶级技术博客。
-
-完整列表内嵌于脚本中。
+完整列表保存于 `config/feeds.json`，包括：simonwillison.net, paulgraham.com, overreacted.io, gwern.net, krebsonsecurity.com, antirez.com, daringfireball.net 等顶级技术博客。
 
 ---
 
 ## 故障排除
 
-### "GEMINI_API_KEY not set"
-需要提供 Gemini API Key，可在 https://aistudio.google.com/apikey 免费获取。
+### "Missing AI provider"
+需要配置至少一种 AI 提供方，见"AI 模型提供方"表格。
 
 ### "Gemini 配额超限或请求失败"
-脚本会自动降级到 OpenAI 兼容接口（需提供 `OPENAI_API_KEY`，可选 `OPENAI_API_BASE`）。
+脚本会自动降级到 Anthropic 或 OpenAI 兼容接口。
+
+### "CLI command failed"
+检查 `AI_CLI_CMD` 对应的命令是否已安装且在 PATH 中可用。
 
 ### "Failed to fetch N feeds"
 部分 RSS 源可能暂时不可用，脚本会跳过失败的源并继续处理。
 
 ### "No articles found in time range"
 尝试扩大时间范围（如从 24 小时改为 48 小时）。
+
