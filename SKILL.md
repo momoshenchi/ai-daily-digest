@@ -27,7 +27,10 @@ description: "Fetches RSS feeds from a curated list of top Hacker News blogs (cu
 
 ---
 
-## 配置持久化
+
+## 交互流程
+
+### Step 0: 检查已保存配置
 
 配置文件路径: `~/.hn-daily-digest/config.json`
 
@@ -39,7 +42,9 @@ Agent 在执行前**必须检查**此文件是否存在：
 **配置文件结构**:
 ```json
 {
-  "ApiKey": "",
+  "GEMINI_API_KEY": "",
+  "OPENAI_API_KEY":"",
+  "ANTHROPIC_API_KEY":"",
   "timeRange": 48,
   "topN": 15,
   "language": "zh",
@@ -47,17 +52,12 @@ Agent 在执行前**必须检查**此文件是否存在：
 }
 ```
 
----
-
-## 交互流程
-
-### Step 0: 检查已保存配置
 
 ```bash
 cat ~/.hn-daily-digest/config.json 2>/dev/null || echo "NO_CONFIG"
 ```
 
-如果配置存在且有 `ApiKey`，询问是否复用：
+如果配置存在且有 `GEMINI_API_KEY`或者`OPENAI_API_KEY`或者`ANTHROPIC_API_KEY`，询问是否复用：
 
 ```
 question({
