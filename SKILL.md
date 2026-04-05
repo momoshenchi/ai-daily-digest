@@ -57,7 +57,7 @@ Agent 在执行前**必须检查**此文件是否存在：
 cat ~/.hn-daily-digest/config.json 2>/dev/null || echo "NO_CONFIG"
 ```
 
-如果配置存在且有 `geminiApiKey`，询问是否复用：
+如果配置存在且有 `ApiKey`，询问是否复用：
 
 ```
 question({
@@ -129,7 +129,7 @@ export ANTHROPIC_API_KEY="your-anthropic-key"
 export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
 ```
 
-如果 `config.geminiApiKey` 或 `AI_CLI_CMD` 已存在，跳过此步。
+如果 `config.ApiKey` 或 `AI_CLI_CMD` 已存在，跳过此步。
 
 ### Step 2: 执行脚本
 
@@ -265,14 +265,6 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 | `prompts/highlights.md` | 今日看点总结格式 |
 
 直接编辑对应 `.md` 文件即可调整 AI 行为，无需修改脚本代码。占位符 `{{ARTICLES_LIST}}`、`{{LANG_INSTRUCTION}}`、`{{LANG_NOTE}}` 会在运行时自动替换。
-
----
-
-## 信息源
-
-RSS 源来自 [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/)，由 [Andrej Karpathy 推荐](https://x.com/karpathy)。
-
-完整列表保存于 `config/feeds.json`，包括：simonwillison.net, paulgraham.com, overreacted.io, gwern.net, krebsonsecurity.com, antirez.com, daringfireball.net 等顶级技术博客。
 
 ---
 
