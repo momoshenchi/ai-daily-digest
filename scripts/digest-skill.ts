@@ -5,6 +5,9 @@ import process from 'node:process';
 const FEED_FETCH_TIMEOUT_MS = 15_000;
 const FEED_CONCURRENCY = 10;
 const SCRIPT_DIR = import.meta.dir;
+const MAX_DESCRIPTION_LENGTH = 500;
+const CANDIDATE_MULTIPLIER = 4;
+const MIN_CANDIDATE_COUNT = 60;
 
 interface FeedConfig {
   name: string;
@@ -21,16 +24,17 @@ interface Article {
   sourceUrl: string;
 }
 
+interface RawRSSItem {
+  title: string;
+  link: string;
+  pubDate: string;
+  description: string;
+}
+
 function stripHtml(html: string): string {
   return html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -54,8 +58,9 @@ function getTagContent(xml: string, tagName: string): string {
   return '';
 }
 
-function getAttrValue(xml: string, tagName: string, attrName: string): string {
-  const pattern = new RegExp(`<${tagName}[^>]*\\s${attrName}=["']([^"']*)["'][^>]*/?>`, 'i');
+function getAttrValue(xml: string, tagName: string, attrName: string, mustContain?: string): string {
+  const extra = mustContain ? `(?=[^>]*${mustContain})` : '';
+  const pattern = new RegExp(`<${tagName}${extra}[^>]*\\s${attrName}=["']([^"']*)["'][^>]*/?>`, 'i');
   const match = xml.match(pattern);
   return match?.[1] || '';
 }
@@ -67,8 +72,8 @@ function parseDate(dateStr: string): Date | null {
   return null;
 }
 
-function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDate: string; description: string }> {
-  const items: Array<{ title: string; link: string; pubDate: string; description: string }> = [];
+function parseRSSItems(xml: string): RawRSSItem[] {
+  const items: RawRSSItem[] = [];
   const isAtom = (xml.includes('<feed') && xml.includes('xmlns="http://www.w3.org/2005/Atom"')) || xml.includes('<feed ');
 
   if (isAtom) {
@@ -77,11 +82,11 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
     while ((entryMatch = entryPattern.exec(xml)) !== null) {
       const entryXml = entryMatch[1];
       const title = stripHtml(getTagContent(entryXml, 'title'));
-      let link = getAttrValue(entryXml, 'link[^>]*rel="alternate"', 'href');
+      let link = getAttrValue(entryXml, 'link', 'href', `rel=["']alternate["']`);
       if (!link) link = getAttrValue(entryXml, 'link', 'href');
       const pubDate = getTagContent(entryXml, 'published') || getTagContent(entryXml, 'updated');
       const description = stripHtml(getTagContent(entryXml, 'summary') || getTagContent(entryXml, 'content'));
-      if (title || link) items.push({ title, link, pubDate, description: description.slice(0, 500) });
+      if (title || link) items.push({ title, link, pubDate, description: description.slice(0, MAX_DESCRIPTION_LENGTH) });
     }
   } else {
     const itemPattern = /<item[\s>]([\s\S]*?)<\/item>/gi;
@@ -92,7 +97,7 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
       const link = getTagContent(itemXml, 'link') || getTagContent(itemXml, 'guid');
       const pubDate = getTagContent(itemXml, 'pubDate') || getTagContent(itemXml, 'dc:date') || getTagContent(itemXml, 'date');
       const description = stripHtml(getTagContent(itemXml, 'description') || getTagContent(itemXml, 'content:encoded'));
-      if (title || link) items.push({ title, link, pubDate, description: description.slice(0, 500) });
+      if (title || link) items.push({ title, link, pubDate, description: description.slice(0, MAX_DESCRIPTION_LENGTH) });
     }
   }
 
@@ -183,7 +188,7 @@ function buildSkillPackage(params: {
 }): string {
   const { lang, topN, hours, recentArticles, scoringTemplate, summaryTemplate, highlightsTemplate } = params;
   const langNote = lang === 'zh' ? '中文' : 'English';
-  const candidateCount = Math.min(Math.max(topN * 4, 60), recentArticles.length);
+  const candidateCount = Math.min(Math.max(topN * CANDIDATE_MULTIPLIER, MIN_CANDIDATE_COUNT), recentArticles.length);
   const candidates = recentArticles.slice(0, candidateCount);
 
   const articleData = candidates
@@ -193,7 +198,7 @@ function buildSkillPackage(params: {
       `Source: ${a.sourceName}`,
       `PublishedAt: ${a.pubDate.toISOString()}`,
       `URL: ${a.link}`,
-      `Description: ${a.description.slice(0, 500)}`,
+      `Description: ${a.description.slice(0, MAX_DESCRIPTION_LENGTH)}`,
     ].join('\n'))
     .join('\n\n---\n\n');
 
@@ -249,7 +254,7 @@ ${highlightsTemplate}
 `;
 }
 
-function printUsage(): never {
+function printUsage(): void {
   console.log(`AI Daily Digest (Skill Mode) - Generate article package for AI client processing
 
 Usage:
@@ -275,7 +280,8 @@ async function main(): Promise<void> {
   let outputPath = '';
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+    const arg = args[i];
+    if (!arg) continue;
     if (arg === '--hours' && args[i + 1]) {
       hours = parseInt(args[++i]!, 10);
     } else if (arg === '--top-n' && args[i + 1]) {
