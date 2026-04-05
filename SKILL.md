@@ -20,6 +20,7 @@ description: "Fetches RSS feeds from a curated list of top Hacker News blogs (cu
 | 文件 | 用途 |
 |------|------|
 | `scripts/digest.ts` | 主脚本 - RSS 抓取、AI 评分、生成摘要 |
+| `scripts/digest-skill.ts` | Skill 任务包脚本 - 仅输出文章数据与 AI 后续处理指令 |
 | `config/feeds.json` | RSS 订阅源列表（可自由编辑添加/删除源） |
 | `prompts/scoring.md` | 文章评分规则 Prompt 模板 |
 | `prompts/summary.md` | 文章摘要生成 Prompt 模板 |
@@ -136,16 +137,17 @@ export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
 ```bash
 mkdir -p ./output
 
-# 选项 A：使用 Claude Code 会话（在 Claude Code 环境中推荐）
+# 选项 A：API 调用版（默认，直接生成日报）
+# 使用 Claude Code 会话（在 Claude Code 环境中推荐）
 export AI_CLI_CMD="claude"
 
-# 选项 B：使用 Gemini
+# 或使用 Gemini
 export GEMINI_API_KEY="<key>"
 
-# 选项 C：使用 Anthropic
+# 或使用 Anthropic
 export ANTHROPIC_API_KEY="<key>"
 
-# 选项 D：OpenAI 兼容兜底（DeepSeek/OpenAI 等）
+# 或 OpenAI 兼容兜底（DeepSeek/OpenAI 等）
 export OPENAI_API_KEY="<fallback-key>"
 export OPENAI_API_BASE="https://api.deepseek.com/v1"
 export OPENAI_MODEL="deepseek-chat"
@@ -155,6 +157,14 @@ npx -y bun ${SKILL_DIR}/scripts/digest.ts \
   --top-n <topN> \
   --lang <zh|en> \
   --output ./output/digest-$(date +%Y%m%d).md
+
+# 选项 B：Skill 任务包版（不直接调用外部 AI API）
+# 仅抓取并输出“给 AI 客户端继续评分/摘要/看点”的任务包
+npx -y bun ${SKILL_DIR}/scripts/digest-skill.ts \
+  --hours <timeRange> \
+  --top-n <topN> \
+  --lang <zh|en> \
+  --output ./output/digest-skill-$(date +%Y%m%d).md
 ```
 
 ### Step 2b: 保存配置
@@ -284,4 +294,3 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 
 ### "No articles found in time range"
 尝试扩大时间范围（如从 24 小时改为 48 小时）。
-
