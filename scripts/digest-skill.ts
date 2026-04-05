@@ -74,7 +74,7 @@ function parseDate(dateStr: string): Date | null {
 
 function parseRSSItems(xml: string): RawRSSItem[] {
   const items: RawRSSItem[] = [];
-  const isAtom = (xml.includes('<feed') && xml.includes('xmlns="http://www.w3.org/2005/Atom"')) || xml.includes('<feed ');
+  const isAtom = /<feed\b[^>]*xmlns=["']http:\/\/www\.w3\.org\/2005\/Atom["']/i.test(xml);
 
   if (isAtom) {
     const entryPattern = /<entry[\s>]([\s\S]*?)<\/entry>/gi;
@@ -198,7 +198,7 @@ function buildSkillPackage(params: {
       `Source: ${a.sourceName}`,
       `PublishedAt: ${a.pubDate.toISOString()}`,
       `URL: ${a.link}`,
-      `Description: ${a.description.slice(0, MAX_DESCRIPTION_LENGTH)}`,
+      `Description: ${a.description}`,
     ].join('\n'))
     .join('\n\n---\n\n');
 
@@ -279,17 +279,47 @@ async function main(): Promise<void> {
   let lang: 'zh' | 'en' = 'zh';
   let outputPath = '';
 
+  const readNextValue = (index: number, flag: string): string => {
+    const next = args[index + 1];
+    if (!next) {
+      console.error(`[digest-skill] Error: ${flag} requires a value.`);
+      process.exit(1);
+    }
+    return next;
+  };
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!arg) continue;
-    if (arg === '--hours' && args[i + 1]) {
-      hours = parseInt(args[++i]!, 10);
-    } else if (arg === '--top-n' && args[i + 1]) {
-      topN = parseInt(args[++i]!, 10);
-    } else if (arg === '--lang' && args[i + 1]) {
-      lang = args[++i] as 'zh' | 'en';
-    } else if (arg === '--output' && args[i + 1]) {
-      outputPath = args[++i]!;
+    if (arg === '--hours') {
+      const raw = readNextValue(i, '--hours');
+      const value = parseInt(raw, 10);
+      if (Number.isNaN(value) || value <= 0) {
+        console.error('[digest-skill] Error: --hours must be a positive integer.');
+        process.exit(1);
+      }
+      hours = value;
+      i++;
+    } else if (arg === '--top-n') {
+      const raw = readNextValue(i, '--top-n');
+      const value = parseInt(raw, 10);
+      if (Number.isNaN(value) || value <= 0) {
+        console.error('[digest-skill] Error: --top-n must be a positive integer.');
+        process.exit(1);
+      }
+      topN = value;
+      i++;
+    } else if (arg === '--lang') {
+      const value = readNextValue(i, '--lang');
+      if (value !== 'zh' && value !== 'en') {
+        console.error('[digest-skill] Error: --lang must be "zh" or "en".');
+        process.exit(1);
+      }
+      lang = value;
+      i++;
+    } else if (arg === '--output') {
+      outputPath = readNextValue(i, '--output');
+      i++;
     }
   }
 
