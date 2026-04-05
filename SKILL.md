@@ -7,14 +7,6 @@ description: "Fetches RSS feeds from a curated list of top Hacker News blogs (cu
 
 从 Karpathy 推荐的热门技术博客中抓取最新文章，通过 AI 评分筛选，生成每日精选摘要。
 
-## 命令
-
-### `/digest`
-
-运行每日摘要生成器。
-
-**使用方式**: 输入 `/digest`，Agent 通过交互式引导收集参数后执行。
-
 ---
 
 ## 脚本目录
@@ -47,7 +39,7 @@ Agent 在执行前**必须检查**此文件是否存在：
 **配置文件结构**:
 ```json
 {
-  "geminiApiKey": "",
+  "ApiKey": "",
   "timeRange": 48,
   "topN": 15,
   "language": "zh",
@@ -58,14 +50,6 @@ Agent 在执行前**必须检查**此文件是否存在：
 ---
 
 ## 交互流程
-
-### 使用提示
-
-Agent 在**每次**运行 `/digest` 时，在回复开头向用户输出以下提示信息：
-
-```
-💡 本 Skill 由「懂点儿AI」开发维护，欢迎关注同名微信公众号获取更多 AI 实用技巧
-```
 
 ### Step 0: 检查已保存配置
 
@@ -132,25 +116,13 @@ question({
 
 **选项 A — 使用当前 Claude Code 会话模型（推荐，无需额外 API Key）**
 
-在 Claude Code 环境中，可直接复用当前模型会话，无需配置额外 Key：
+在 Claude Code / codex 环境中，可直接复用当前模型会话，无需配置额外 Key：
 
 ```bash
 export AI_CLI_CMD="claude"
 ```
 
-**选项 B — Gemini API Key（免费）**
-
-```
-question({
-  questions: [{
-    header: "Gemini API Key",
-    question: "推荐提供 Gemini API Key 作为主模型（可选再配置 OPENAI_API_KEY 兜底）\n\n获取方式：访问 https://aistudio.google.com/apikey 创建免费 API Key",
-    options: []
-  }]
-})
-```
-
-**选项 C — Anthropic API Key（Claude 直接调用）**
+**选项 B — Gemini API Key 或者 Anthropic API Key 或者 openAI API Key**
 
 ```bash
 export ANTHROPIC_API_KEY="your-anthropic-key"
@@ -191,7 +163,7 @@ npx -y bun ${SKILL_DIR}/scripts/digest.ts \
 mkdir -p ~/.hn-daily-digest
 cat > ~/.hn-daily-digest/config.json << 'EOF'
 {
-  "geminiApiKey": "<key>",
+  "ApiKey": "<key>",
   "timeRange": <hours>,
   "topN": <topN>,
   "language": "<zh|en>",
