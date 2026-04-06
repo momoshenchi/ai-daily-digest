@@ -108,27 +108,6 @@ question({
 })
 ```
 
-### Step 1b: AI 模型配置
-
-根据运行环境选择合适的 AI 提供方：
-
-**选项 A — 使用当前 Claude Code 会话模型（推荐，无需额外 API Key）**
-
-在 Claude Code / codex 环境中，可直接复用当前模型会话，无需配置额外 Key：
-
-```bash
-export AI_CLI_CMD="claude"
-```
-
-**选项 B — Gemini API Key 或者 Anthropic API Key 或者 openAI API Key**
-
-```bash
-export ANTHROPIC_API_KEY="your-anthropic-key"
-export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
-```
-
-如果 `config.ApiKey` 或 `AI_CLI_CMD` 已存在，跳过此步。
-
 ### Step 2: 执行脚本
 
 **两个版本选一个运行：**
@@ -136,13 +115,21 @@ export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
 #### 选项 A — API 调用版（`digest.ts`，推荐有 API Key 时使用）
 
 脚本直接调用外部 AI API 完成评分与摘要，生成完整日报文件。
+支持多种 AI 模型调用方式，通过环境变量配置：
+
+| 提供方 | 环境变量 | 说明 |
+|--------|----------|------|
+| Gemini | `GEMINI_API_KEY` | 免费额度充足，推荐首选 |
+| Anthropic | `ANTHROPIC_API_KEY` | 直接调用 Claude API |
+| OpenAI 兼容 | `OPENAI_API_KEY` + `OPENAI_API_BASE` | DeepSeek、OpenAI 等 |
+
+**优先级**: `GEMINI_API_KEY` > `ANTHROPIC_API_KEY` > `OPENAI_API_KEY`
+
 
 ```bash
 mkdir -p ./output
 
-# 使用 Claude Code 会话（在 Claude Code 环境中推荐）
-export AI_CLI_CMD="claude"
-
+# 如果 `config.ApiKey` 跳过此步。
 # 或使用 Gemini
 export GEMINI_API_KEY="<key>"
 
@@ -153,7 +140,11 @@ export ANTHROPIC_API_KEY="<key>"
 export OPENAI_API_KEY="<fallback-key>"
 export OPENAI_API_BASE="https://api.deepseek.com/v1"
 export OPENAI_MODEL="deepseek-chat"
+```
 
+配置环境变量完成后, 调用模型
+
+```bash
 npx -y bun ${SKILL_DIR}/scripts/digest.ts \
   --hours <timeRange> \
   --top-n <topN> \
@@ -183,14 +174,17 @@ npx -y bun ${SKILL_DIR}/scripts/digest-skill.ts \
 4. **生成摘要** — 读取 `${SKILL_DIR}/prompts/summary.md`，按其中的模板为每篇精选文章生成中文标题翻译、结构化摘要、推荐理由
 5. **生成今日看点** — 读取 `${SKILL_DIR}/prompts/highlights.md`，按其中的模板归纳 2-3 条宏观技术趋势
 6. **输出日报** — 按标准日报结构（看点 → Top 3 → 数据概览 → 分类文章列表）输出 Markdown
-### Step 2b: 保存配置
+
+### Step 3: 保存配置
 
 ```bash
 mkdir -p ~/.hn-daily-digest
 cat > ~/.hn-daily-digest/config.json << 'EOF'
 {
-  "ApiKey": "<key>",
-  "timeRange": <hours>,
+  "GEMINI_API_KEY": "<key>",
+  "OPENAI_API_KEY":"<key>",
+  "ANTHROPIC_API_KEY":"<key>",
+  "timeRange": "<hours>",
   "topN": <topN>,
   "language": "<zh|en>",
   "lastUsed": "<ISO timestamp>"
@@ -198,7 +192,7 @@ cat > ~/.hn-daily-digest/config.json << 'EOF'
 EOF
 ```
 
-### Step 3: 结果展示
+### Step 4: 结果展示
 
 **成功时**：
 - 📁 报告文件路径
@@ -233,31 +227,6 @@ EOF
 
 ---
 
-## AI 模型提供方
-
-脚本支持多种 AI 模型调用方式，通过环境变量配置：
-
-| 提供方 | 环境变量 | 说明 |
-|--------|----------|------|
-| Claude Code 会话 | `AI_CLI_CMD=claude` | 复用当前 Claude Code 会话，无需独立 API Key |
-| Gemini | `GEMINI_API_KEY` | 免费额度充足，推荐首选 |
-| Anthropic | `ANTHROPIC_API_KEY` | 直接调用 Claude API |
-| OpenAI 兼容 | `OPENAI_API_KEY` + `OPENAI_API_BASE` | DeepSeek、OpenAI 等 |
-
-**优先级**: `AI_CLI_CMD` > `GEMINI_API_KEY` > `ANTHROPIC_API_KEY` > `OPENAI_API_KEY`
-
-**在 Claude Code / Cursor / Copilot 等 AI 编码工具中使用时**，可将 `AI_CLI_CMD` 设置为对应工具的 CLI 命令，直接复用当前会话的模型能力，无需配置额外 API Key：
-
-```bash
-# Claude Code
-export AI_CLI_CMD="claude"
-
-# llm（Simon Willison 的通用 LLM CLI 工具）
-export AI_CLI_CMD="llm"
-```
-
----
-
 ## 环境要求
 
 - `bun` 运行时（通过 `npx -y bun` 自动安装）
@@ -277,7 +246,7 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 ```
 
 直接编辑该文件即可增删订阅源，无需修改脚本代码。
-
+**编辑feeds.json文件时, 请询问用户**
 ---
 
 ## Prompt 模板
@@ -290,7 +259,9 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 | `prompts/summary.md` | 摘要模板 — 生成中文标题翻译、结构化摘要、推荐理由 |
 | `prompts/highlights.md` | 今日看点模板 — 归纳 2-3 条宏观技术趋势 |
 
-占位符说明：`{{ARTICLES_LIST}}` 会由 AI 会话替换为实际文章数据，`{{LANG_INSTRUCTION}}` / `{{LANG_NOTE}}` 会替换为对应语言指令。
+**编辑该些文件时, 请询问用户**
+
+
 
 ## 故障排除
 
@@ -299,9 +270,6 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 
 ### "Gemini 配额超限或请求失败"
 脚本会自动降级到 Anthropic 或 OpenAI 兼容接口。
-
-### "CLI command failed"
-检查 `AI_CLI_CMD` 对应的命令是否已安装且在 PATH 中可用。
 
 ### "Failed to fetch N feeds"
 部分 RSS 源可能暂时不可用，脚本会跳过失败的源并继续处理。
