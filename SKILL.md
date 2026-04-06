@@ -19,12 +19,9 @@ description: "Fetches RSS feeds from a curated list of top Hacker News blogs (cu
 
 | 文件 | 用途 |
 |------|------|
-| `scripts/digest.ts` | 主脚本 - RSS 抓取、AI 评分、生成摘要 |
-| `scripts/digest-skill.ts` | Skill 任务包脚本 - 仅输出文章数据与 AI 后续处理指令 |
+| `scripts/digest.ts` | API 调用版 - RSS 抓取、AI 评分、生成摘要（需配置 AI API Key） |
+| `scripts/digest-skill.ts` | Skill 版 - RSS 抓取后输出任务包，由当前 AI 会话完成评分与摘要 |
 | `config/feeds.json` | RSS 订阅源列表（可自由编辑添加/删除源） |
-| `prompts/scoring.md` | 文章评分规则 Prompt 模板 |
-| `prompts/summary.md` | 文章摘要生成 Prompt 模板 |
-| `prompts/highlights.md` | 今日看点生成 Prompt 模板 |
 
 ---
 
@@ -134,10 +131,15 @@ export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
 
 ### Step 2: 执行脚本
 
+**两个版本选一个运行：**
+
+#### 选项 A — API 调用版（`digest.ts`，推荐有 API Key 时使用）
+
+脚本直接调用外部 AI API 完成评分与摘要，生成完整日报文件。
+
 ```bash
 mkdir -p ./output
 
-# 选项 A：API 调用版（默认，直接生成日报）
 # 使用 Claude Code 会话（在 Claude Code 环境中推荐）
 export AI_CLI_CMD="claude"
 
@@ -157,9 +159,15 @@ npx -y bun ${SKILL_DIR}/scripts/digest.ts \
   --top-n <topN> \
   --lang <zh|en> \
   --output ./output/digest-$(date +%Y%m%d).md
+```
 
-# 选项 B：Skill 任务包版（不直接调用外部 AI API）
-# 仅抓取并输出“给 AI 客户端继续评分/摘要/看点”的任务包
+#### 选项 B — Skill 版（`digest-skill.ts`，无需额外 API Key）
+
+脚本仅负责抓取 RSS 并输出任务包文件；评分、摘要、今日看点由**当前 AI 会话**（即正在执行此 Skill 的模型）直接完成，不调用任何外部 API。
+
+```bash
+mkdir -p ./output
+
 npx -y bun ${SKILL_DIR}/scripts/digest-skill.ts \
   --hours <timeRange> \
   --top-n <topN> \
@@ -167,6 +175,14 @@ npx -y bun ${SKILL_DIR}/scripts/digest-skill.ts \
   --output ./output/digest-skill-$(date +%Y%m%d).md
 ```
 
+任务包生成后，AI 按以下流程处理：
+
+1. **阅读文章数据** — 任务包中包含所有候选文章（标题、来源、时间、摘要）
+2. **评分与分类** — 使用内嵌的"评分 Prompt 模板"，对每篇文章从相关性、质量、时效性三个维度打分（1-10），并分配分类标签和关键词
+3. **筛选 Top N** — 按加权总分排序，选出最终精选文章
+4. **生成摘要** — 使用内嵌的"摘要 Prompt 模板"，为每篇精选文章生成中文标题、结构化摘要、推荐理由
+5. **生成今日看点** — 使用内嵌的"今日看点 Prompt 模板"，归纳 2-3 条宏观技术趋势
+6. **输出日报** — 按标准日报结构（看点 → Top 3 → 数据概览 → 分类文章列表）输出 Markdown
 ### Step 2b: 保存配置
 
 ```bash
@@ -264,19 +280,135 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 
 ---
 
-## 自定义评分规则
+## Prompt 模板（Skill 版内嵌）
 
-评分标准、摘要格式、今日看点格式均以 Markdown 模板形式保存在 `prompts/` 目录：
+Skill 版的三个 AI 处理模板已直接内嵌于 `scripts/digest-skill.ts`，无需外部文件。以下为完整模板内容，供查阅与自定义参考。修改后需同步更新 `digest-skill.ts` 中对应的常量。
 
-| 文件 | 用途 |
-|------|------|
-| `prompts/scoring.md` | 文章相关性/质量/时效性评分规则 |
-| `prompts/summary.md` | 摘要结构与格式要求 |
-| `prompts/highlights.md` | 今日看点总结格式 |
-
-直接编辑对应 `.md` 文件即可调整 AI 行为，无需修改脚本代码。占位符 `{{ARTICLES_LIST}}`、`{{LANG_INSTRUCTION}}`、`{{LANG_NOTE}}` 会在运行时自动替换。
+占位符说明：`{{ARTICLES_LIST}}` 会替换为实际文章数据，`{{LANG_INSTRUCTION}}` / `{{LANG_NOTE}}` 会替换为语言指令。
 
 ---
+
+### 评分模板（SCORING_TEMPLATE）
+
+用于对候选文章进行相关性、质量、时效性三维度打分，并分配分类标签和关键词。
+
+```
+你是一个技术内容策展人，正在为一份面向技术爱好者的每日精选摘要筛选文章。
+
+请对以下文章进行三个维度的评分（1-10 整数，10 分最高），并为每篇文章分配一个分类标签和提取 2-4 个关键词。
+
+## 评分维度
+
+### 1. 相关性 (relevance) - 对技术/编程/AI/互联网从业者的价值
+- 10: 所有技术人都应该知道的重大事件/突破
+- 7-9: 对大部分技术从业者有价值
+- 4-6: 对特定技术领域有价值
+- 1-3: 与技术行业关联不大
+
+### 2. 质量 (quality) - 文章本身的深度和写作质量
+- 10: 深度分析，原创洞见，引用丰富
+- 7-9: 有深度，观点独到
+- 4-6: 信息准确，表达清晰
+- 1-3: 浅尝辄止或纯转述
+
+### 3. 时效性 (timeliness) - 当前是否值得阅读
+- 10: 正在发生的重大事件/刚发布的重要工具
+- 7-9: 近期热点相关
+- 4-6: 常青内容，不过时
+- 1-3: 过时或无时效价值
+
+## 分类标签（必须从以下选一个）
+- ai-ml: AI、机器学习、LLM、深度学习相关
+- security: 安全、隐私、漏洞、加密相关
+- engineering: 软件工程、架构、编程语言、系统设计
+- tools: 开发工具、开源项目、新发布的库/框架
+- opinion: 行业观点、个人思考、职业发展、文化评论
+- other: 以上都不太适合的
+
+## 关键词提取
+提取 2-4 个最能代表文章主题的关键词（用英文，简短，如 "Rust", "LLM", "database", "performance"）
+
+## 待评分文章
+
+{{ARTICLES_LIST}}
+
+请严格按 JSON 格式返回，不要包含 markdown 代码块或其他文字：
+{
+  "results": [
+    {
+      "index": 0,
+      "relevance": 8,
+      "quality": 7,
+      "timeliness": 9,
+      "category": "engineering",
+      "keywords": ["Rust", "compiler", "performance"]
+    }
+  ]
+}
+```
+
+---
+
+### 摘要模板（SUMMARY_TEMPLATE）
+
+用于为筛选后的 Top N 文章生成中文标题翻译、结构化摘要和推荐理由。
+
+```
+你是一个技术内容摘要专家。请为以下文章完成三件事：
+
+1. **中文标题** (titleZh): 将英文标题翻译成自然的中文。如果原标题已经是中文则保持不变。
+2. **摘要** (summary): 4-6 句话的结构化摘要，让读者不点进原文也能了解核心内容。包含：
+   - 文章讨论的核心问题或主题（1 句）
+   - 关键论点、技术方案或发现（2-3 句）
+   - 结论或作者的核心观点（1 句）
+3. **推荐理由** (reason): 1 句话说明"为什么值得读"，区别于摘要（摘要说"是什么"，推荐理由说"为什么"）。
+
+{{LANG_INSTRUCTION}}
+
+摘要要求：
+- 直接说重点，不要用"本文讨论了..."、"这篇文章介绍了..."这种开头
+- 包含具体的技术名词、数据、方案名称或观点
+- 保留关键数字和指标（如性能提升百分比、用户数、版本号等）
+- 如果文章涉及对比或选型，要点出比较对象和结论
+- 目标：读者花 30 秒读完摘要，就能决定是否值得花 10 分钟读原文
+
+## 待摘要文章
+
+{{ARTICLES_LIST}}
+
+请严格按 JSON 格式返回：
+{
+  "results": [
+    {
+      "index": 0,
+      "titleZh": "中文翻译的标题",
+      "summary": "摘要内容...",
+      "reason": "推荐理由..."
+    }
+  ]
+}
+```
+
+---
+
+### 今日看点模板（HIGHLIGHTS_TEMPLATE）
+
+用于基于精选文章归纳 2-3 条宏观技术趋势，生成日报开头的"今日看点"段落。
+
+```
+根据以下今日精选技术文章列表，写一段 3-5 句话的"今日看点"总结。
+要求：
+- 提炼出今天技术圈的 2-3 个主要趋势或话题
+- 不要逐篇列举，要做宏观归纳
+- 风格简洁有力，像新闻导语
+{{LANG_NOTE}}
+
+文章列表：
+{{ARTICLES_LIST}}
+
+直接返回纯文本总结，不要 JSON，不要 markdown 格式。
+```
+
 
 ## 故障排除
 
