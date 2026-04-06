@@ -33,8 +33,8 @@ Agent 会依次询问：
    - 脚本内部直接调用 Gemini / Anthropic / OpenAI 兼容 API（或 AI_CLI_CMD）
    - 一次性输出最终日报
 2. **Skill 任务包版（新增）**：`scripts/digest-skill.ts`
-   - 脚本只负责抓取文章数据 + 组装评分/摘要/看点指令
-   - 输出 `.md` 任务包，交给 AI 客户端在会话内完成评分、摘要、趋势总结
+   - 脚本只负责抓取文章数据，输出 `.md` 数据包
+   - AI 客户端依次读取 `prompts/` 目录下的评分、摘要、今日看点模板，在会话内完成评分、摘要、趋势总结
 
 ### 直接命令行运行
 
@@ -53,11 +53,10 @@ npx -y bun scripts/digest-skill.ts --hours 48 --top-n 15 --lang zh --output ./di
 ```
 
 生成的 `digest-skill.md` 包含：
-- 候选文章数据（给 AI 读取）
-- 评分 Prompt 模板
-- 摘要 Prompt 模板
-- 今日看点 Prompt 模板
-- 执行步骤说明（指示 AI 完成评分、摘要和最终报告）
+- 任务参数（时间窗口、候选文章数、输出语言、精选数量）
+- 候选文章数据（标题、来源、时间、摘要）
+
+AI 会话随后依次读取 `prompts/scoring.md`、`prompts/summary.md`、`prompts/highlights.md` 完成评分、摘要和最终报告。
 
 ## 功能
 
