@@ -19,11 +19,9 @@ description: "Fetches RSS feeds from a curated list of top Hacker News blogs (cu
 
 | 文件 | 用途 |
 |------|------|
-| `scripts/digest.ts` | 主脚本 - RSS 抓取、AI 评分、生成摘要 |
+| `scripts/digest.ts` | API 调用版 - RSS 抓取、AI 评分、生成摘要（需配置 AI API Key） |
+| `scripts/digest-skill.ts` | Skill 版 - RSS 抓取后输出任务包，由当前 AI 会话完成评分与摘要 |
 | `config/feeds.json` | RSS 订阅源列表（可自由编辑添加/删除源） |
-| `prompts/scoring.md` | 文章评分规则 Prompt 模板 |
-| `prompts/summary.md` | 文章摘要生成 Prompt 模板 |
-| `prompts/highlights.md` | 今日看点生成 Prompt 模板 |
 
 ---
 
@@ -133,19 +131,25 @@ export ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选
 
 ### Step 2: 执行脚本
 
+**两个版本选一个运行：**
+
+#### 选项 A — API 调用版（`digest.ts`，推荐有 API Key 时使用）
+
+脚本直接调用外部 AI API 完成评分与摘要，生成完整日报文件。
+
 ```bash
 mkdir -p ./output
 
-# 选项 A：使用 Claude Code 会话（在 Claude Code 环境中推荐）
+# 使用 Claude Code 会话（在 Claude Code 环境中推荐）
 export AI_CLI_CMD="claude"
 
-# 选项 B：使用 Gemini
+# 或使用 Gemini
 export GEMINI_API_KEY="<key>"
 
-# 选项 C：使用 Anthropic
+# 或使用 Anthropic
 export ANTHROPIC_API_KEY="<key>"
 
-# 选项 D：OpenAI 兼容兜底（DeepSeek/OpenAI 等）
+# 或 OpenAI 兼容兜底（DeepSeek/OpenAI 等）
 export OPENAI_API_KEY="<fallback-key>"
 export OPENAI_API_BASE="https://api.deepseek.com/v1"
 export OPENAI_MODEL="deepseek-chat"
@@ -157,6 +161,28 @@ npx -y bun ${SKILL_DIR}/scripts/digest.ts \
   --output ./output/digest-$(date +%Y%m%d).md
 ```
 
+#### 选项 B — Skill 版（`digest-skill.ts`，无需额外 API Key）
+
+脚本仅负责抓取 RSS 并输出文章数据包；评分、摘要、今日看点由**当前 AI 会话**（即正在执行此 Skill 的模型）直接完成，不调用任何外部 API。
+
+```bash
+mkdir -p ./output
+
+npx -y bun ${SKILL_DIR}/scripts/digest-skill.ts \
+  --hours <timeRange> \
+  --top-n <topN> \
+  --lang <zh|en> \
+  --output ./output/digest-skill-$(date +%Y%m%d).md
+```
+
+文章数据包生成后，AI 按以下步骤处理：
+
+1. **阅读文章数据** — 读取输出的数据包文件，了解所有候选文章（标题、来源、时间、摘要）
+2. **评分与分类** — 读取 `${SKILL_DIR}/prompts/scoring.md`，按其中的评分规则对每篇文章从相关性、质量、时效性三个维度打分（1-10），并分配分类标签和关键词，以 JSON 格式输出结果
+3. **筛选 Top N** — 按加权总分排序，选出最终精选文章
+4. **生成摘要** — 读取 `${SKILL_DIR}/prompts/summary.md`，按其中的模板为每篇精选文章生成中文标题翻译、结构化摘要、推荐理由
+5. **生成今日看点** — 读取 `${SKILL_DIR}/prompts/highlights.md`，按其中的模板归纳 2-3 条宏观技术趋势
+6. **输出日报** — 按标准日报结构（看点 → Top 3 → 数据概览 → 分类文章列表）输出 Markdown
 ### Step 2b: 保存配置
 
 ```bash
@@ -254,19 +280,17 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 
 ---
 
-## 自定义评分规则
+## Prompt 模板
 
-评分标准、摘要格式、今日看点格式均以 Markdown 模板形式保存在 `prompts/` 目录：
+三个 AI 处理模板存放在 `prompts/` 目录下，AI 会话在处理文章数据时直接读取这些文件。
 
 | 文件 | 用途 |
 |------|------|
-| `prompts/scoring.md` | 文章相关性/质量/时效性评分规则 |
-| `prompts/summary.md` | 摘要结构与格式要求 |
-| `prompts/highlights.md` | 今日看点总结格式 |
+| `prompts/scoring.md` | 评分模板 — 从相关性、质量、时效性三维度打分，并分配分类标签和关键词 |
+| `prompts/summary.md` | 摘要模板 — 生成中文标题翻译、结构化摘要、推荐理由 |
+| `prompts/highlights.md` | 今日看点模板 — 归纳 2-3 条宏观技术趋势 |
 
-直接编辑对应 `.md` 文件即可调整 AI 行为，无需修改脚本代码。占位符 `{{ARTICLES_LIST}}`、`{{LANG_INSTRUCTION}}`、`{{LANG_NOTE}}` 会在运行时自动替换。
-
----
+占位符说明：`{{ARTICLES_LIST}}` 会由 AI 会话替换为实际文章数据，`{{LANG_INSTRUCTION}}` / `{{LANG_NOTE}}` 会替换为对应语言指令。
 
 ## 故障排除
 
@@ -284,4 +308,3 @@ RSS 订阅源列表保存在 `config/feeds.json`，支持自由编辑：
 
 ### "No articles found in time range"
 尝试扩大时间范围（如从 24 小时改为 48 小时）。
-

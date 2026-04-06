@@ -27,6 +27,15 @@ Agent 会依次询问：
 
 配置会自动保存到 `~/.hn-daily-digest/config.json`，下次运行可一键复用。
 
+### 两种运行形态
+
+1. **API 调用版（当前默认）**：`scripts/digest.ts`
+   - 脚本内部直接调用 Gemini / Anthropic / OpenAI 兼容 API（或 AI_CLI_CMD）
+   - 一次性输出最终日报
+2. **Skill 任务包版（新增）**：`scripts/digest-skill.ts`
+   - 脚本只负责抓取文章数据，输出 `.md` 数据包
+   - AI 客户端依次读取 `prompts/` 目录下的评分、摘要、今日看点模板，在会话内完成评分、摘要、趋势总结
+
 ### 直接命令行运行
 
 ```bash
@@ -36,6 +45,18 @@ export OPENAI_API_BASE="https://api.deepseek.com/v1" # 可选，默认 https://a
 export OPENAI_MODEL="deepseek-chat"                  # 可选，不填会自动推断
 npx -y bun scripts/digest.ts --hours 48 --top-n 15 --lang zh --output ./digest.md
 ```
+
+### Skill 任务包模式（无外部 AI API 调用）
+
+```bash
+npx -y bun scripts/digest-skill.ts --hours 48 --top-n 15 --lang zh --output ./digest-skill.md
+```
+
+生成的 `digest-skill.md` 包含：
+- 任务参数（时间窗口、候选文章数、输出语言、精选数量）
+- 候选文章数据（标题、来源、时间、摘要）
+
+AI 会话随后依次读取 `prompts/scoring.md`、`prompts/summary.md`、`prompts/highlights.md` 完成评分、摘要和最终报告。
 
 ## 功能
 
@@ -116,7 +137,7 @@ RSS 抓取 → 时间过滤 → AI 评分+分类 → AI 摘要+翻译 → 趋势
 
 ### 改动范围说明
 
-整个项目只有一个脚本文件 `scripts/digest.ts`，AI 调用逻辑集中在两处：
+API 调用版核心脚本为 `scripts/digest.ts`，AI 调用逻辑集中在两处：
 
 | 位置 | 说明 |
 |------|------|
@@ -143,4 +164,4 @@ RSS 抓取 → 时间过滤 → AI 评分+分类 → AI 摘要+翻译 → 趋势
 
 > Simon Willison · Paul Graham · Dan Abramov · Gwern · Krebs on Security · Antirez · John Gruber · Troy Hunt · Mitchell Hashimoto · Steve Blank · Eli Bendersky · Fabien Sanglard ...
 
-完整列表内嵌于 `scripts/digest.ts`。
+完整列表位于 `config/feeds.json`，由脚本运行时加载。
